@@ -1,0 +1,24 @@
+{
+  "name": "postgresql-local",
+  "version": "1.0.0",
+  "description": "PostgreSQL 15 local com Docker e suporte a SSL",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js",
+    "ssl": "generate-ssl.cmd",
+    "db:up": "docker compose up -d",
+    "db:down": "docker compose down",
+    "db:logs": "docker logs -f postgres"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "pg": "^8.13.3"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.9"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

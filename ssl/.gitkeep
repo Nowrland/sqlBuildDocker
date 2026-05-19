@@ -1,0 +1,3 @@
+# Esta pasta é ignorada pelo git (server.crt e server.key estão no .gitignore).
+# Execute: .\generate-ssl.ps1  para gerar os certificados.
+# generate-ssl.cmd
