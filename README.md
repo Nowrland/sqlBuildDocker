@@ -1,201 +1,144 @@
+# PostgreSQL local com Docker
 
+Ambiente local de PostgreSQL 17 para desenvolvimento. O Docker Compose inicia o banco com SSL habilitado e persiste os dados em um volume Docker. O repositório também inclui um dump SQL (`backup_completo.sql`) e um script para gerar certificados autoassinados.
 
-# PostgreSQL Local
+## Requisitos
 
-**PostgreSQL 15 rodando em Docker para desenvolvimento Node.js com suporte a SSL**
+- Docker Desktop com Docker Compose v2
+- OpenSSL para gerar os certificados, disponível no `PATH` ou pelo Git for Windows
+- Node.js 18+ somente se você for usar o driver `pg` no seu projeto
 
-![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15-336791?style=for-the-badge&logo=postgresql&logoColor=white)
-![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?style=for-the-badge&logo=docker&logoColor=white)
-![Node.js](https://img.shields.io/badge/Node.js-pg-339933?style=for-the-badge&logo=nodedotjs&logoColor=white)
-![SSL](https://img.shields.io/badge/SSL-Enabled-green?style=for-the-badge&logo=letsencrypt&logoColor=white)
+## Arquivos principais
 
-</div>
+| Arquivo | Finalidade |
+| --- | --- |
+| `docker-compose.yml` | Define o serviço PostgreSQL 17, SSL, porta e volume de dados |
+| `.env` | Configura usuário, senha, banco e porta do host; não compartilhe nem versione |
+| `generate-ssl.cmd` | Gera `ssl/server.crt` e `ssl/server.key` no Windows |
+| `backup_completo.sql` | Dump SQL com estrutura e dados do banco |
+| `package.json` | Dependências Node (`pg`, `dotenv` e `nodemon`) e atalhos npm |
 
----
+## Configuração e inicialização
 
-## Pre-requisitos
+1. Confira se o `.env` contém `POSTGRES_USER`, `POSTGRES_PASSWORD` e `POSTGRES_DB`. `POSTGRES_PORT` é opcional e, quando omitida, a porta publicada no host é `5432`.
+2. No Windows, gere os certificados uma vez:
 
-| Ferramenta   | Versao minima | Instalacao                              |
-|--------------|---------------|-----------------------------------------|
-| Docker       | 24+           | https://docs.docker.com/get-docker      |
-| Node.js      | 18+           | https://nodejs.org                      |
-| Git          | qualquer      | https://git-scm.com/download/win        |
+   ```cmd
+   generate-ssl.cmd
+   ```
 
-> O **Git for Windows** ja inclui o OpenSSL. O script `generate-ssl.cmd` detecta automaticamente.
-> Caso nao tenha o Git: `winget install ShiningLight.OpenSSL`
+   O Compose espera os arquivos `ssl/server.crt` e `ssl/server.key`. O certificado é autoassinado e destinado a desenvolvimento local.
+3. Inicie o banco:
 
----
+   ```sh
+   docker compose up -d
+   docker compose ps
+   docker compose logs -f postgres
+   ```
 
-## Estrutura
+O diretório `ssl/` pode estar vazio antes da geração dos certificados. A chave e o certificado estão ignorados pelo Git.
 
+## Restaurar o dump
+
+O banco criado pelo Compose começa vazio. Para carregar a estrutura e os dados do dump em um banco vazio, execute na raiz do projeto:
+
+```sh
+docker compose exec -T postgres psql -U Arcanautadb -d arcaappteste < backup_completo.sql
 ```
-postgreSql/
-├── ssl/
-│   ├── server.crt       # certificado publico (gerado pelo script)
-│   └── server.key       # chave privada (gerado pelo script)
-├── .env                 # credenciais (nao versionar)
-├── .gitignore
-├── docker-compose.yml   # container postgres com SSL
-├── generate-ssl.cmd     # gera os certificados SSL
-├── package.json
-└── README.md
+
+No PowerShell, rode a mesma linha pelo `cmd.exe` para usar o redirecionamento do arquivo:
+
+```powershell
+cmd.exe /d /c "docker compose exec -T postgres psql -U Arcanautadb -d arcaappteste < backup_completo.sql"
 ```
 
----
+O dump define objetos pertencentes a `Arcanautadb`; portanto, esse usuário precisa existir e ter permissão para criar os objetos. Se os valores de `POSTGRES_USER` ou `POSTGRES_DB` no `.env` forem diferentes, substitua `Arcanautadb` e `arcaappteste` pelos valores configurados. Restaure em um banco vazio para evitar conflitos com objetos já existentes.
 
-## Primeira vez (setup completo)
+## Conectar ao banco
 
-```cmd
-:: 1. Instalar dependencias Node
+Com os valores padrão usados pelo projeto:
+
+| Campo | Valor |
+| --- | --- |
+| Host | `localhost` |
+| Porta | valor de `POSTGRES_PORT` ou `5432` |
+| Banco | valor de `POSTGRES_DB` (atualmente `arcaappteste`) |
+| Usuário | valor de `POSTGRES_USER` (atualmente `Arcanautadb`) |
+| SSL | habilitado; certificado autoassinado |
+
+Com `psql` instalado localmente, use a senha configurada no `.env` quando solicitada:
+
+```sh
+psql "host=localhost port=5432 dbname=arcaappteste user=Arcanautadb sslmode=require"
+```
+
+Ou abra o `psql` dentro do container:
+
+```sh
+docker compose exec postgres psql -U Arcanautadb -d arcaappteste
+```
+
+A porta no exemplo local deve acompanhar `POSTGRES_PORT` se você a alterou.
+
+## Usar com Node.js
+
+O projeto fornece o driver `pg` e `dotenv`, mas não contém `index.js` nem uma aplicação Node pronta. Para instalar as dependências neste repositório:
+
+```sh
 npm install
-
-:: 2. Gerar certificados SSL (apenas uma vez)
-generate-ssl.cmd
-
-:: 3. Subir o container
-docker compose up -d
 ```
 
----
-
-## Conexao
-
-| Campo    | Valor          |
-|----------|----------------|
-| Host     | `localhost`    |
-| Porta    | `5432`         |
-| Database | `arcaappteste` |
-| User     | `Arcanautadb`  |
-| SSL      | habilitado     |
-
----
-
-## Node.js (`pg`)
-
-### Instalacao
-
-```cmd
-npm install
-```
-
-Dependencias incluidas no `package.json`:
-
-| Pacote    | Uso                           |
-|-----------|-------------------------------|
-| `pg`      | Driver PostgreSQL             |
-| `dotenv`  | Carrega variaveis do `.env`   |
-| `nodemon` | Hot reload em desenvolvimento |
-
-### Pool de conexao
+Em uma aplicação Node, carregue as variáveis do arquivo `.env` da própria aplicação e configure o cliente para aceitar o certificado autoassinado apenas no ambiente de desenvolvimento:
 
 ```js
 const { Pool } = require('pg')
 
 const db = new Pool({
-  host:     'localhost',
-  port:     5432,
-  database: 'arcaappteste',
-  user:     'Arcanautadb',
+  host: 'localhost',
+  port: Number(process.env.POSTGRES_PORT || 5432),
+  database: process.env.POSTGRES_DB,
+  user: process.env.POSTGRES_USER,
   password: process.env.POSTGRES_PASSWORD,
-  ssl:      { rejectUnauthorized: false }, // aceita certificado auto-assinado
+  ssl: { rejectUnauthorized: false },
 })
 
 module.exports = db
 ```
 
-### Ou via DATABASE_URL
-
-```env
-# .env do seu projeto Node
-DATABASE_URL=postgresql://Arcanautadb:senha@localhost:5432/arcaappteste?sslmode=require
-```
+Use placeholders para valores em consultas:
 
 ```js
-const { Pool } = require('pg')
-const db = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false },
-})
+const { rows } = await db.query(
+  'SELECT * FROM users WHERE discord_id = $1',
+  [discordId]
+)
 ```
 
-### Exemplos de query
+Os scripts `npm start` e `npm run dev` declarados em `package.json` esperam um `index.js`, que não está presente neste repositório.
 
-```js
-// SELECT
-const { rows } = await db.query('SELECT * FROM users WHERE id = $1', [id])
+Os atalhos npm disponíveis são:
 
-// INSERT
-await db.query('INSERT INTO users (name, email) VALUES ($1, $2)', [name, email])
+| Comando | Ação |
+| --- | --- |
+| `npm run db:up` | Inicia o serviço com Docker Compose |
+| `npm run db:down` | Para os serviços sem apagar o volume |
+| `npm run db:logs` | Acompanha os logs do container `postgres` |
+| `npm run ssl` | Executa `generate-ssl.cmd` no Windows |
 
-// UPDATE
-await db.query('UPDATE users SET name = $1 WHERE id = $2', [name, id])
+## Comandos úteis
 
-// DELETE
-await db.query('DELETE FROM users WHERE id = $1', [id])
+```sh
+docker compose up -d       # inicia o banco
+docker compose ps          # mostra o estado dos serviços
+docker compose logs -f postgres  # acompanha os logs
+docker compose down        # para os containers; mantém os dados
 ```
 
----
+Os dados ficam no volume `postgres_data` e permanecem após `docker compose down`. Para apagar o volume e os dados do banco, use `docker compose down -v`.
 
-## SSL
+Para gerar novamente os certificados no Windows, execute `generate-ssl.cmd` e reinicie o serviço:
 
-| Arquivo             | Descricao                           |
-|---------------------|-------------------------------------|
-| `ssl/server.crt`    | Certificado publico (auto-assinado) |
-| `ssl/server.key`    | Chave privada                       |
-| `generate-ssl.cmd`  | Script para (re)gerar os certs      |
-
-Certificados tem validade de **10 anos**. Para regenerar:
-
-```cmd
+```sh
 docker compose down
-generate-ssl.cmd
 docker compose up -d
 ```
-
----
-
-## Scripts npm
-
-```cmd
-npm start          :: executa index.js
-npm run dev        :: executa com nodemon (hot reload)
-npm run db:up      :: sobe o container
-npm run db:down    :: para o container
-npm run db:logs    :: acompanha logs do postgres
-```
-
----
-
-## CLI (psql)
-
-```cmd
-:: Via connection string
-psql "postgresql://Arcanautadb@localhost:5432/arcaappteste?sslmode=require"
-
-:: Dentro do container
-docker exec -it postgres psql -U Arcanautadb -d arcaappteste
-```
-
----
-
-## Comandos Docker
-
-```cmd
-docker compose up -d        :: subir
-docker compose ps           :: status
-docker logs -f postgres     :: logs em tempo real
-docker compose down         :: parar (dados preservados)
-docker compose down -v      :: parar e apagar volume
-```
-
----
-
-## Credenciais
-
-Definidas em [.env](.env) - nunca versionar esse arquivo.
-
----
-
-<div align="center">
-  <sub>Ambiente de desenvolvimento local</sub>
-</div>
